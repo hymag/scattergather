@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:ws="http://www.mulesoft.org/schema/mule/ws" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ws http://www.mulesoft.org/schema/mule/ws/current/mule-ws.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd">
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+    <http:request-config name="HTTP_Request_Configuration" host="ilt.mulesoft-training.com" port="80" doc:name="HTTP Request Configuration"/>
+    <ws:consumer-config name="Web_Service_Consumer" wsdlLocation="http://ilt.mulesoft-training.com/essentials/delta?wsdl" service="TicketServiceService" port="TicketServicePort" serviceAddress="http://training.cloudhub.io/essentials/delta" doc:name="Web Service Consumer"/>
+    <flow name="restandsoapFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/two" doc:name="HTTP"/>
+        <logger message="tracking the request:#[payload]" level="INFO" doc:name="Logger"/>
+        <scatter-gather doc:name="Scatter-Gather">
+            <threading-profile poolExhaustedAction="RUN" threadWaitTimeout="100"/>
+            <processor-chain>
+                <http:request config-ref="HTTP_Request_Configuration" path="/essentials/united/flights" method="GET" doc:name="HTTP">
+                </http:request>
+                <dw:transform-message doc:name="Transform Message" metadata:id="9abe5a2e-4690-4dbf-81ea-eb0b84aa14ae">
+                    <dw:input-payload mimeType="application/json"/>
+                    <dw:input-variable variableName="destination"/>
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+payload.flights map ((flight , indexOfFlight) -> {
+	flightCode: flight.code,
+	fromAirportCode: flight.origin,
+	toAirportCode: flight.destination,
+	emptySeats: flight.emptySeats,
+	price: flight.price,
+	planeType: flight.planeType++ flight.airlineName
+})]]></dw:set-payload>
+                </dw:transform-message>
+            </processor-chain>
+            <processor-chain>
+                <ws:consumer config-ref="Web_Service_Consumer" operation="listAllFlights" doc:name="Web Service Consumer"/>
+                <dw:transform-message doc:name="Transform Message" metadata:id="d1104d96-5c54-4107-bb6b-4adf937f0926">
+                    <dw:input-payload doc:sample="sample_data\findFlightResponse.xml"/>
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+%namespace ns0 http://soap.training.mulesoft.com/
+---
+payload.ns0#listAllFlightsResponse.*return map ((return , indexOfReturn) -> {
+	airline: return.airlineName,
+	flightCode: return.code,
+	fromAirportCode: return.origin,
+	toAirportCode: return.destination,
+	departureDate: return.departureDate,
+	emptySeats: return.emptySeats,
+	price: return.price,
+	planeType: return.planeType
+})]]></dw:set-payload>
+                </dw:transform-message>
+            </processor-chain>
+        </scatter-gather>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+flatten payload]]></dw:set-payload>
+        </dw:transform-message>
+        <logger message="twoservices:#[payload]" level="INFO" doc:name="Logger"/>
+    </flow>
+</mule>
